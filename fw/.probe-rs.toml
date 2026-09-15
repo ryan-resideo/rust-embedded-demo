@@ -1,0 +1,9 @@
+# probe-rs reads this from the working directory. The "default" preset is
+# applied automatically when no --preset is given, so every probe-rs entry
+# point -- `cargo flash`, `cargo run` (via the runner in .cargo/config.toml),
+# `cargo embed` and bare `probe-rs ...` -- picks up the chip with no flags.
+#
+# Each key becomes a `--key value` argument, and an explicit flag on the
+# command line still wins.
+[presets.default]
+chip = "STM32F429ZITx"

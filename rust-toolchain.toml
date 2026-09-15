@@ -1,0 +1,4 @@
+[toolchain]
+channel = "1.91.1"
+targets = ["thumbv7em-none-eabihf"]
+components = ["rust-src", "llvm-tools", "rust-analyzer"]

@@ -1,0 +1,11 @@
+[build]
+target = "thumbv7em-none-eabihf"
+
+[target.thumbv7em-none-eabihf]
+# `cargo run` builds, flashes, resets and stays attached.
+# The chip comes from the default preset in .probe-rs.toml.
+runner = "probe-rs run"
+rustflags = [
+  "-C", "link-arg=--nmagic",
+  "-C", "link-arg=-Tlink.x",
+]

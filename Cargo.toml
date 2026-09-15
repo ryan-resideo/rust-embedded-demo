@@ -1,0 +1,9 @@
+[workspace]
+members = [
+  "core",
+  "lib",
+  "cli",
+  "proto",
+]
+# fw is its own workspace: it cross-compiles to thumbv7em-none-eabihf.
+exclude = ["fw"]
