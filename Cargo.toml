@@ -1,9 +1,13 @@
 [workspace]
+resolver = "3"
+
 members = [
   "core",
   "lib",
   "cli",
   "proto",
 ]
-# fw is its own workspace: it cross-compiles to thumbv7em-none-eabihf.
+
+# fw is its own workspace as multiple targets in one workspace
+# is not yet well supported.
 exclude = ["fw"]
