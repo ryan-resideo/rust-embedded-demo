@@ -24,6 +24,15 @@ pub enum RespBody {
     DeviceInfo(DeviceInfo),
     /// The current status of the device
     Measurement(Measurement),
+    /// The request could not be serviced
+    Error(Error),
+}
+
+/// Why a request could not be serviced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Error {
+    /// The platform could not complete a measurement
+    MeasurementFailed,
 }
 
 /// Represents device information returned by the RED device.

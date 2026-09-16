@@ -19,10 +19,15 @@ embassy-stm32 = { version = "0.6.0", features = [
     "time-driver-any",
 ] }
 embassy-time = "0.5.1"
+embassy-futures = "0.1.2"
 cortex-m = { version = "0.7.7", features = ["inline-asm", "critical-section-single-core"] }
 cortex-m-rt = "0.7.6"
 heapless = "0.9.2"
 panic-probe = "1.0.0"
+
+# Async-only: the blocking `Bme280` would pull in embedded-hal 1.0 for nothing.
+# defmt/log/uom stay off, the firmware has no logging path yet.
+bme280-rs = { version = "0.4.1", default-features = false, features = ["async"] }
 
 red-core = { path = "../core" }
 red-proto = { path = "../proto" }

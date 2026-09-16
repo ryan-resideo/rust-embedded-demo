@@ -30,3 +30,4 @@ lint:
 fix:
 	cargo fmt && cargo clippy --fix --allow-dirty
 	cd fw && cargo fmt && cargo clippy --fix --allow-dirty
+

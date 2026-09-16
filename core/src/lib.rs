@@ -4,18 +4,24 @@ use heapless::String;
 
 use red_proto::{
     req::{Req, ReqBody},
-    resp::{DeviceInfo, Measurement, Resp, RespBody},
+    resp::{DeviceInfo, Error, Measurement, Resp, RespBody},
 };
 
 const GIT_VERSION: &str = env!("GIT_VERSION");
 
 /// An abstract interface for the underlying hardware platform
+///
+/// `measure` is `async` because a real platform reads its sensor over a bus. No `Send`
+/// bound is wanted here: the firmware runs on a single threaded embassy executor.
+#[allow(async_fn_in_trait)]
 pub trait Platform {
     /// Fetch the chip_id from the underlying platform
     fn chip_id(&self) -> String<32>;
 
     /// Perform a measurement using the underlying platform
-    fn measure(&self) -> Measurement;
+    ///
+    /// Returns `None` if the platform could not complete the measurement.
+    async fn measure(&mut self) -> Option<Measurement>;
 }
 
 /// The engine that implements business / application logic
@@ -23,12 +29,16 @@ pub trait Platform {
 /// Defined here so it can be mocked and tested outside of the actual hardware platform.
 pub struct Engine<P: Platform> {
     platform: P,
+    last_measurement: Option<Measurement>,
 }
 
 impl<P: Platform> Engine<P> {
     /// Creates a new engine with the given platform interface
     pub fn new(platform: P) -> Self {
-        Self { platform }
+        Self {
+            platform,
+            last_measurement: None,
+        }
     }
 
     /// The underlying hardware platform
@@ -36,14 +46,29 @@ impl<P: Platform> Engine<P> {
         &self.platform
     }
 
+    /// Perform a periodic update, taking a sensor measurement and updating internal state.
+    pub async fn update(&mut self) {
+        match self.platform.measure().await {
+            Some(measurement) => {
+                self.last_measurement = Some(measurement);
+            }
+            None => {
+                // Handle measurement failure if necessary
+            }
+        }
+    }
+
     /// Handle an incoming request, returning a response against the same identifier
-    pub async fn handle_request(&self, req: Req) -> Resp {
+    pub async fn handle_request(&mut self, req: Req) -> Resp {
         let body = match req.body {
             ReqBody::GetDeviceInfo => RespBody::DeviceInfo(DeviceInfo {
                 chip_id: self.platform.chip_id(),
                 firmware_version: String::try_from(GIT_VERSION).unwrap(),
             }),
-            ReqBody::GetMeasurement => RespBody::Measurement(self.platform.measure()),
+            ReqBody::GetMeasurement => match self.last_measurement.as_ref() {
+                Some(measurement) => RespBody::Measurement(measurement.clone()),
+                None => RespBody::Error(Error::MeasurementFailed),
+            },
         };
 
         Resp::new(req.id, body)
@@ -58,19 +83,39 @@ mod tests {
 
     use super::*;
 
-    struct MockPlatform;
+    struct MockPlatform {
+        /// The measurement `measure` yields, or `None` to simulate a sensor that cannot be read.
+        measurement: Option<Measurement>,
+    }
+
+    impl MockPlatform {
+        const CHIP_ID: &'static str = "0123456789abcdef";
+        const SAMPLE: Measurement = Measurement {
+            temperature: 21.0,
+            pressure: 1013.0,
+            humidity: 55.0,
+        };
+
+        /// A platform whose sensor reads successfully.
+        fn working() -> Self {
+            Self {
+                measurement: Some(Self::SAMPLE),
+            }
+        }
+
+        /// A platform whose sensor cannot be read.
+        fn failing() -> Self {
+            Self { measurement: None }
+        }
+    }
 
     impl Platform for MockPlatform {
         fn chip_id(&self) -> String<32> {
-            String::try_from("0123456789abcdef").unwrap()
+            String::try_from(Self::CHIP_ID).unwrap()
         }
 
-        fn measure(&self) -> Measurement {
-            Measurement {
-                temperature: 21.0,
-                pressure: 1013.0,
-                humidity: 55.0,
-            }
+        async fn measure(&mut self) -> Option<Measurement> {
+            self.measurement.clone()
         }
     }
 
@@ -84,7 +129,7 @@ mod tests {
 
     #[test]
     fn handles_device_info() {
-        let engine = Engine::new(MockPlatform);
+        let mut engine = Engine::new(MockPlatform::working());
 
         let resp = now(engine.handle_request(Req::new(7, ReqBody::GetDeviceInfo)));
 
@@ -95,13 +140,13 @@ mod tests {
             panic!("expected device info");
         };
 
-        assert_eq!(info.chip_id, MockPlatform.chip_id());
+        assert_eq!(info.chip_id, MockPlatform::CHIP_ID);
         assert_eq!(info.firmware_version, GIT_VERSION);
     }
 
     #[test]
     fn handles_measurement() {
-        let engine = Engine::new(MockPlatform);
+        let mut engine = Engine::new(MockPlatform::working());
 
         let resp = now(engine.handle_request(Req::new(9, ReqBody::GetMeasurement)));
 
@@ -111,6 +156,22 @@ mod tests {
             panic!("expected measurement");
         };
 
-        assert_eq!(measurement.temperature, MockPlatform.measure().temperature);
+        assert_eq!(measurement.temperature, MockPlatform::SAMPLE.temperature);
+        assert_eq!(measurement.pressure, MockPlatform::SAMPLE.pressure);
+        assert_eq!(measurement.humidity, MockPlatform::SAMPLE.humidity);
+    }
+
+    /// A platform that cannot read its sensor answers the request rather than stalling it.
+    #[test]
+    fn reports_failed_measurement() {
+        let mut engine = Engine::new(MockPlatform::failing());
+
+        let resp = now(engine.handle_request(Req::new(11, ReqBody::GetMeasurement)));
+
+        assert_eq!(resp.id, 11);
+        assert!(matches!(
+            resp.body,
+            RespBody::Error(Error::MeasurementFailed)
+        ));
     }
 }

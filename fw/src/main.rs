@@ -2,12 +2,15 @@
 #![no_main]
 
 use embassy_executor::Spawner;
+use embassy_futures::select::{Either, select};
 use embassy_stm32::Config;
 use embassy_stm32::gpio::{Level, Output, Speed};
+use embassy_stm32::i2c::I2c;
 use embassy_stm32::rcc::{
     APBPrescaler, Hse, HseMode, Pll, PllMul, PllPDiv, PllPreDiv, PllSource, Sysclk,
 };
-use embassy_time::{Duration, Timer};
+use embassy_stm32::{bind_interrupts, dma, i2c, peripherals};
+use embassy_time::{Duration, Ticker, Timer};
 
 use panic_probe as _; // panic handler (breakpoint; probe-rs reports the halt)
 
@@ -19,6 +22,13 @@ mod platform;
 use channels::{
     Request, RequestChannel, RequestReceiver, Response, ResponseChannel, Router, Source,
 };
+
+bind_interrupts!(struct Irqs {
+    I2C1_EV => i2c::EventInterruptHandler<peripherals::I2C1>;
+    I2C1_ER => i2c::ErrorInterruptHandler<peripherals::I2C1>;
+    DMA1_STREAM0 => dma::InterruptHandler<peripherals::DMA1_CH0>;
+    DMA1_STREAM6 => dma::InterruptHandler<peripherals::DMA1_CH6>;
+});
 
 /// Requests into the engine, shared by every communications source.
 static ENGINE_REQUESTS: RequestChannel = RequestChannel::new();
@@ -71,10 +81,23 @@ async fn main(spawner: Spawner) {
     let led_r = Output::new(p.PB14, Level::Low, Speed::Low);
     spawner.spawn(blink(led_g, led_b, led_r).unwrap());
 
+    // I2C1 on the Arduino header: D15/PB8 = SCL, D14/PB9 = SDA, both AF4.
+    // The default config is 100 kHz with the internal pullups off, so the sensor breakout
+    // is expected to provide them.
+    let i2c = I2c::new(
+        p.I2C1,
+        p.PB8,
+        p.PB9,
+        p.DMA1_CH6,
+        p.DMA1_CH0,
+        Irqs,
+        Default::default(),
+    );
+
     // TODO: other setups here
 
     // Create the platform and engine instances
-    let platform = platform::Stm32Platform {};
+    let platform = platform::Stm32Platform::new(i2c).await;
     let engine = Engine::new(platform);
     spawner.spawn(run_engine(engine, ENGINE_REQUESTS.receiver(), engine_router()).unwrap());
 
@@ -84,19 +107,29 @@ async fn main(spawner: Spawner) {
 /// Engine task, services requests from every source and routes responses back to the source
 #[embassy_executor::task]
 async fn run_engine(
-    engine: Engine<platform::Stm32Platform>,
+    mut engine: Engine<platform::Stm32Platform>,
     requests: RequestReceiver,
     responses: Router,
 ) {
+    let mut ticker = Ticker::every(Duration::from_secs(10));
+
     loop {
         // Await incoming requests from the engine's request channel
-        let Request { address, req } = requests.receive().await;
+        match select(ticker.next(), requests.receive()).await {
+            Either::First(_) => {
+                // Tick every 10 seconds
+                let _ = engine.update().await;
+            }
+            Either::Second(req) => {
+                let Request { address, req } = req;
 
-        // Handle the request using the engine
-        let resp = engine.handle_request(req).await;
+                // Handle the request using the engine
+                let resp = engine.handle_request(req).await;
 
-        // Forward the response to the appropriate transport via the router
-        let _ = responses.try_send(Response { address, resp });
+                // Forward the response to the appropriate transport via the router
+                let _ = responses.try_send(Response { address, resp });
+            }
+        }
     }
 }
 

@@ -72,6 +72,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bme280-rs"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f559aa576a32704987d14a5d6808f7956847b14bc635311e855cb003d2a281c"
+dependencies = [
+ "embedded-hal-async",
+]
+
+[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -728,9 +737,11 @@ dependencies = [
 name = "red-fw"
 version = "0.1.0"
 dependencies = [
+ "bme280-rs",
  "cortex-m",
  "cortex-m-rt",
  "embassy-executor",
+ "embassy-futures",
  "embassy-stm32",
  "embassy-sync",
  "embassy-time",
