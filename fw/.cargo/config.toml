@@ -1,6 +1,12 @@
 [build]
 target = "thumbv7em-none-eabihf"
 
+[env]
+# defmt filters at compile time and defaults to ERROR-only when unset.
+# force = false, so `DEFMT_LOG=trace cargo run` from the shell still wins.
+# `DEFMT_LOG=off` drops every log call and its interned string from the binary.
+DEFMT_LOG = { value = "debug", force = false }
+
 [target.thumbv7em-none-eabihf]
 # `cargo run` builds, flashes, resets and stays attached.
 # The chip comes from the default preset in .probe-rs.toml.
@@ -8,4 +14,6 @@ runner = "probe-rs run"
 rustflags = [
   "-C", "link-arg=--nmagic",
   "-C", "link-arg=-Tlink.x",
+  # Must follow -Tlink.x. Emits the .defmt section probe-rs decodes from.
+  "-C", "link-arg=-Tdefmt.x",
 ]

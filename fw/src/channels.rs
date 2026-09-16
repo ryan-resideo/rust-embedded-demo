@@ -39,7 +39,7 @@ pub type ResponseReceiver =
     Receiver<'static, CriticalSectionRawMutex, Response, RESPONSE_QUEUE_LEN>;
 
 /// The communications source a request arrived on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, defmt::Format)]
 pub enum Source {
     /// USB device interface
     Usb,
@@ -69,7 +69,7 @@ impl Source {
 /// The return address for a request: the source it arrived on, plus a source specific
 /// endpoint used to demultiplex where a source handles more than one peer (socket index,
 /// USB interface, etc.). Sources with a single peer should use [`Address::new`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, defmt::Format)]
 pub struct Address {
     /// Source the request arrived on
     pub source: Source,
@@ -93,7 +93,7 @@ impl Address {
 }
 
 /// A request for the engine, tagged with the address it originated from.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, defmt::Format)]
 pub struct Request {
     /// The address the request arrived from, and to which the response is returned
     pub address: Address,
@@ -102,7 +102,7 @@ pub struct Request {
 }
 
 /// A response from the engine, tagged with the address it is destined for.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, defmt::Format)]
 pub struct Response {
     /// The address the originating request arrived from
     pub address: Address,
@@ -111,7 +111,7 @@ pub struct Response {
 }
 
 /// Reasons a response could not be delivered to its source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, defmt::Format)]
 pub enum RouteError {
     /// No response channel is registered for the source
     Unsupported(Source),

@@ -3,19 +3,18 @@
 //! Environmental readings come from a Bosch BME280 on I2C1, wired to the Arduino header
 //! (D15/PB8 = SCL, D14/PB9 = SDA).
 
-use core::future::Future;
-
 use bme280_rs::{AsyncBme280, Configuration, Oversampling, SensorMode};
+use defmt::{debug, error};
 use embassy_stm32::i2c::{I2c, Master};
 use embassy_stm32::mode::Async;
 use embassy_time::{Delay, Duration, with_timeout};
 use heapless::String;
 
-use red_core::Platform;
+use red_core::{Platform, PlatformError};
 use red_proto::resp::Measurement;
 
 /// I2C address of the BME280. (0x76, 0x77)
-const BME280_ADDRESS: u8 = 0x76;
+const BME280_ADDRESS: u8 = 0x76; // 👀
 
 /// Timeout for sensor operations
 const TIMEOUT: Duration = Duration::from_millis(100);
@@ -31,14 +30,36 @@ impl Stm32Platform {
     ///
     /// The sensor itself is configured lazily on the first measurement, so a board brought up
     /// without one attached still boots and still serves every other request.
-    pub async fn new(i2c: I2c<'static, Async, Master>) -> Self {
+    pub async fn new(i2c: I2c<'static, Async, Master>) -> Result<Self, PlatformError> {
         let mut bme280 = AsyncBme280::new_with_address(i2c, BME280_ADDRESS, Delay);
 
         // Check we can talk to the sensor by reading its chip ID.
-        let _ = bme280.chip_id().await;
+        match with_timeout(TIMEOUT, bme280.chip_id()).await {
+            Ok(Ok(chip_id)) => {
+                debug!("bme280: chip id: {}", chip_id);
+            }
+            Ok(Err(e)) => {
+                error!("bme280: failed to read chip ID: {:?}", e);
+                return Err(PlatformError::I2cError);
+            }
+            Err(e) => {
+                error!("bme280: timeout reading chip ID: {:?}", e);
+                return Err(PlatformError::Timeout);
+            }
+        }
 
         // Initialise the sensor
-        let _ = bme280.init().await;
+        match with_timeout(Duration::from_secs(2), bme280.init()).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                error!("bme280: failed to initialize: {:?}", e);
+                return Err(PlatformError::I2cError);
+            }
+            Err(e) => {
+                error!("bme280: timeout initializing: {:?}", e);
+                return Err(PlatformError::Timeout);
+            }
+        }
 
         let configuration = Configuration::default()
             .with_temperature_oversampling(Oversampling::Oversample1)
@@ -46,9 +67,19 @@ impl Stm32Platform {
             .with_humidity_oversampling(Oversampling::Oversample1)
             .with_sensor_mode(SensorMode::Normal);
 
-        let _ = exchange(bme280.set_sampling_configuration(configuration)).await;
+        match with_timeout(TIMEOUT, bme280.set_sampling_configuration(configuration)).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                error!("bme280: failed to set sampling configuration: {:?}", e);
+                return Err(PlatformError::I2cError);
+            }
+            Err(e) => {
+                error!("bme280: timeout setting sampling configuration: {:?}", e);
+                return Err(PlatformError::Timeout);
+            }
+        }
 
-        Self { bme280 }
+        Ok(Self { bme280 })
     }
 }
 
@@ -57,18 +88,23 @@ impl Platform for Stm32Platform {
         String::try_from(embassy_stm32::uid::uid_hex()).unwrap()
     }
 
-    async fn measure(&mut self) -> Option<Measurement> {
-        let sample = exchange(self.bme280.read_sample()).await.unwrap();
+    async fn measure(&mut self) -> Result<Measurement, PlatformError> {
+        let sample = match with_timeout(TIMEOUT, self.bme280.read_sample()).await {
+            Ok(Ok(sample)) => sample,
+            Ok(Err(e)) => {
+                error!("bme280: failed to read sample: {:?}", e);
+                return Err(PlatformError::I2cError);
+            }
+            Err(e) => {
+                error!("bme280: timeout reading sample: {:?}", e);
+                return Err(PlatformError::Timeout);
+            }
+        };
 
-        Some(Measurement {
-            temperature: sample.temperature?,
-            pressure: sample.pressure?,
-            humidity: sample.humidity?,
+        Ok(Measurement {
+            temperature: sample.temperature.ok_or(PlatformError::I2cError)?,
+            pressure: sample.pressure.ok_or(PlatformError::I2cError)?,
+            humidity: sample.humidity.ok_or(PlatformError::I2cError)?,
         })
     }
-}
-
-/// Runs one exchange with the sensor, collapsing both a timeout and an I2C error into `None`.
-async fn exchange<T, E>(f: impl Future<Output = Result<T, E>>) -> Option<T> {
-    with_timeout(TIMEOUT, f).await.ok()?.ok()
 }

@@ -6,4 +6,10 @@ edition = "2024"
 [dependencies]
 heapless = "0.9.3"
 red-proto = { path = "../proto" }
+defmt = { version = "1.0.1", optional = true }
 
+[features]
+# Forwarding only: `Platform` is a trait and `Engine<P>` is generic over it, so
+# there is nothing here to derive `Format` on yet. Enabling this from the
+# firmware turns the derives on all the way down through `red-proto`.
+defmt = ["dep:defmt", "red-proto/defmt"]

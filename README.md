@@ -25,3 +25,23 @@ This is intended to follow the progression of the talk. To see this step-by-step
 - The `thumbv7em-none-eabihf` target, via `rustup target add thumbv7em-none-eabihf`
 - `probe-rs` via `cargo install probe-rs-tools` (or `binstall` if you have it)
 
+## Logging
+
+The firmware logs over RTT with [`defmt`](https://defmt.ferrous-systems.com/). `probe-rs`
+decodes it from the `.defmt` section of the ELF, so nothing beyond `make fw-run` is needed:
+
+- `make fw-run` (`cargo run`) flashes and stays attached, streaming logs.
+- `make fw-flash` (`cargo flash`) flashes and detaches — it shows **no** logs. Use
+  `probe-rs attach` to reconnect to a board that is already running.
+
+Verbosity is a *compile-time* filter, so changing it rebuilds. `fw/.cargo/config.toml`
+defaults it to `debug`; override it per invocation:
+
+```bash
+DEFMT_LOG=trace cargo run --release
+```
+
+`DEFMT_LOG=off` drops every log call and its interned string from the binary, and module
+filters such as `DEFMT_LOG=red_fw=trace,info` work too. Frames are prefixed with uptime in
+milliseconds, provided by `embassy-time`'s `defmt-timestamp-uptime-ms` feature.
+

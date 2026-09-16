@@ -12,6 +12,8 @@ use embassy_stm32::rcc::{
 use embassy_stm32::{bind_interrupts, dma, i2c, peripherals};
 use embassy_time::{Duration, Ticker, Timer};
 
+use defmt::{debug, error, info, unwrap, warn};
+use defmt_rtt as _; // global defmt logger (RTT transport)
 use panic_probe as _; // panic handler (breakpoint; probe-rs reports the halt)
 
 use red_core::Engine;
@@ -75,11 +77,13 @@ async fn blink(mut led_g: Output<'static>, mut led_b: Output<'static>, mut led_r
 async fn main(spawner: Spawner) {
     let p = embassy_stm32::init(clock_config());
 
+    info!("red-fw starting, SYSCLK 180 MHz (8 MHz HSE bypass -> PLL)");
+
     // Setup and spawn the LED task
     let led_g = Output::new(p.PB0, Level::Low, Speed::Low);
     let led_b = Output::new(p.PB7, Level::Low, Speed::Low);
     let led_r = Output::new(p.PB14, Level::Low, Speed::Low);
-    spawner.spawn(blink(led_g, led_b, led_r).unwrap());
+    spawner.spawn(unwrap!(blink(led_g, led_b, led_r)));
 
     // I2C1 on the Arduino header: D15/PB8 = SCL, D14/PB9 = SDA, both AF4.
     // The default config is 100 kHz with the internal pullups off, so the sensor breakout
@@ -97,11 +101,25 @@ async fn main(spawner: Spawner) {
     // TODO: other setups here
 
     // Create the platform and engine instances
-    let platform = platform::Stm32Platform::new(i2c).await;
+    let platform = match platform::Stm32Platform::new(i2c).await {
+        Ok(p) => p,
+        Err(e) => {
+            error!("failed to initialize platform: {:?}", e);
+            #[allow(clippy::empty_loop)]
+            loop {}
+        }
+    };
     let engine = Engine::new(platform);
-    spawner.spawn(run_engine(engine, ENGINE_REQUESTS.receiver(), engine_router()).unwrap());
+
+    // Spawn the engine task
+    spawner.spawn(unwrap!(run_engine(
+        engine,
+        ENGINE_REQUESTS.receiver(),
+        engine_router()
+    )));
 
     // TODO: spawn the transports and bind them to the engine channel
+    info!("startup complete");
 }
 
 /// Engine task, services requests from every source and routes responses back to the source
@@ -118,7 +136,9 @@ async fn run_engine(
         match select(ticker.next(), requests.receive()).await {
             Either::First(_) => {
                 // Tick every 10 seconds
-                let _ = engine.update().await;
+                if let Err(e) = engine.update().await {
+                    error!("engine update failed: {:?}", e);
+                }
             }
             Either::Second(req) => {
                 let Request { address, req } = req;
@@ -127,7 +147,9 @@ async fn run_engine(
                 let resp = engine.handle_request(req).await;
 
                 // Forward the response to the appropriate transport via the router
-                let _ = responses.try_send(Response { address, resp });
+                if let Err(e) = responses.try_send(Response { address, resp }) {
+                    warn!("dropped response to {}: {}", address, e);
+                }
             }
         }
     }

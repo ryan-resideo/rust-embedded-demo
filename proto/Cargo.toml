@@ -5,3 +5,11 @@ edition = "2024"
 
 [dependencies]
 heapless = "0.9.3"
+defmt = { version = "1.0.1", optional = true }
+
+[features]
+# Derive `defmt::Format` on the protocol types.
+#
+# The `heapless/defmt` forward is load-bearing: without it the `String<32>`
+# fields of `DeviceInfo` have no `Format` impl and the derive fails to compile.
+defmt = ["dep:defmt", "heapless/defmt"]

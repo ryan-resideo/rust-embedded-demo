@@ -21,7 +21,15 @@ pub trait Platform {
     /// Perform a measurement using the underlying platform
     ///
     /// Returns `None` if the platform could not complete the measurement.
-    async fn measure(&mut self) -> Option<Measurement>;
+    async fn measure(&mut self) -> Result<Measurement, PlatformError>;
+}
+
+
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PlatformError {
+    Timeout,
+    I2cError,
 }
 
 /// The engine that implements business / application logic
@@ -47,15 +55,18 @@ impl<P: Platform> Engine<P> {
     }
 
     /// Perform a periodic update, taking a sensor measurement and updating internal state.
-    pub async fn update(&mut self) {
+    pub async fn update(&mut self) -> Result<(), PlatformError> {
         match self.platform.measure().await {
-            Some(measurement) => {
+            Ok(measurement) => {
+                #[cfg(feature = "defmt")]
+                defmt::info!("Measurement: {:?}", measurement);
                 self.last_measurement = Some(measurement);
             }
-            None => {
-                // Handle measurement failure if necessary
+            Err(e) => {
+                return Err(e);
             }
         }
+        Ok(())
     }
 
     /// Handle an incoming request, returning a response against the same identifier
@@ -114,8 +125,11 @@ mod tests {
             String::try_from(Self::CHIP_ID).unwrap()
         }
 
-        async fn measure(&mut self) -> Option<Measurement> {
-            self.measurement.clone()
+        async fn measure(&mut self) -> Result<Measurement, PlatformError> {
+            match self.measurement.clone() {
+                Some(measurement) => Ok(measurement),
+                None => Err(PlatformError::I2cError),
+            }
         }
     }
 
