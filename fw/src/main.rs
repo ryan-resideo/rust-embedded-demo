@@ -12,7 +12,7 @@ use embassy_stm32::rcc::{
 use embassy_stm32::{bind_interrupts, dma, i2c, peripherals};
 use embassy_time::{Duration, Ticker, Timer};
 
-use defmt::{debug, error, info, unwrap, warn};
+use defmt::{error, info, unwrap, warn};
 use defmt_rtt as _; // global defmt logger (RTT transport)
 use panic_probe as _; // panic handler (breakpoint; probe-rs reports the halt)
 

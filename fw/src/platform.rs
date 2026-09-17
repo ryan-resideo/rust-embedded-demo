@@ -14,7 +14,7 @@ use red_core::{Platform, PlatformError};
 use red_proto::resp::Measurement;
 
 /// I2C address of the BME280. (0x76, 0x77)
-const BME280_ADDRESS: u8 = 0x76; // 👀
+const BME280_ADDRESS: u8 = 0x77; // 👀
 
 /// Timeout for sensor operations
 const TIMEOUT: Duration = Duration::from_millis(100);
