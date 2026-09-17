@@ -11,3 +11,6 @@ members = [
 # fw is its own workspace as multiple targets in one workspace
 # is not yet well supported.
 exclude = ["fw"]
+
+[patch.crates-io]
+postcard = { git = "https://github.com/jamesmunns/postcard.git", branch = "main" }

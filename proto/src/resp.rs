@@ -1,8 +1,9 @@
 use heapless::String;
+use serde::{Deserialize, Serialize};
 
 /// A response from the RED device, carrying the identifier of the
 /// [`Req`](crate::req::Req) that produced it.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Resp {
     /// Identifier of the originating request
@@ -16,10 +17,18 @@ impl Resp {
     pub const fn new(id: u32, body: RespBody) -> Self {
         Self { id, body }
     }
+
+    pub fn encode(&self, buff: &mut [u8]) -> Result<usize, postcard::Error> {
+        postcard::to_slice_cobs(self, buff).map(|slice| slice.len())
+    }
+
+    pub fn decode(buff: &mut [u8]) -> Result<Self, postcard::Error> {
+        postcard::from_bytes_cobs(buff)
+    }
 }
 
 /// Represents a response received from the RED device.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum RespBody {
     /// Information about the device
@@ -31,7 +40,7 @@ pub enum RespBody {
 }
 
 /// Why a request could not be serviced.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Error {
     /// The platform could not complete a measurement
@@ -39,7 +48,7 @@ pub enum Error {
 }
 
 /// Represents device information returned by the RED device.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct DeviceInfo {
     /// The unique identifier of the chip.
@@ -49,7 +58,7 @@ pub struct DeviceInfo {
 }
 
 /// Represents a measurement returned by the RED device.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Measurement {
     pub temperature: f32,

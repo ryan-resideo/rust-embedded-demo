@@ -6,6 +6,9 @@ edition = "2024"
 [workspace]
 resolver = "3"
 
+[patch.crates-io]
+postcard = { git = "https://github.com/jamesmunns/postcard.git", branch = "main" }
+
 [dependencies]
 embassy-executor = { version = "0.10.0", features = [
     "platform-cortex-m",
