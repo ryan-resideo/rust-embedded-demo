@@ -9,6 +9,14 @@ fw-run:
 fw-flash:
 	cd fw && cargo flash
 
+# On-device tests. Needs a board with a BME280 attached; see fw/tests/.
+fw-test:
+	cd fw && cargo test
+
+# Builds the on-device tests without a probe, for CI.
+fw-test-build:
+	cd fw && cargo test --no-run
+
 cli-build:
 	cd cli && cargo build
 
@@ -25,7 +33,7 @@ fmt:
 
 lint:
 	cargo clippy
-	cd fw && cargo clippy
+	cd fw && cargo clippy --all-targets
 
 fix:
 	cargo fmt && cargo clippy --fix --allow-dirty

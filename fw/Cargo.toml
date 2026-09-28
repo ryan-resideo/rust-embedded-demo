@@ -3,6 +3,26 @@ name = "red-fw"
 version = "0.1.0"
 edition = "2024"
 
+# The library holds everything the application is built from so the on-device test suite in
+# `tests/` can bring the same hardware up the same way. `test = false` on both targets: they
+# are `no_std`, so the default libtest harness cannot be built for either.
+[lib]
+name = "red_fw"
+test = false
+bench = false
+doctest = false
+
+[[bin]]
+name = "red-fw"
+test = false
+bench = false
+
+# On-device tests, run with `cargo test` against an attached probe. defmt-test supplies the
+# entry point, so the default harness is disabled.
+[[test]]
+name = "hardware"
+harness = false
+
 [workspace]
 resolver = "3"
 
@@ -40,6 +60,15 @@ bme280-rs = { version = "0.4.1", default-features = false, features = ["async"] 
 
 red-core = { path = "../core", features = ["defmt"] }
 red-proto = { path = "../proto", features = ["defmt"] }
+
+[dev-dependencies]
+defmt-test = "0.5.0"
+
+# The test harness runs in thread mode with no embassy executor, so embassy-time cannot use
+# the executor's integrated timer queue -- it needs the standalone one. Scoping this to
+# dev-dependencies means it applies while building tests and leaves `cargo build` (the
+# firmware that ships) on the integrated queue.
+embassy-time = { version = "0.5.1", features = ["generic-queue-8"] }
 
 [profile.dev]
 opt-level = "s"

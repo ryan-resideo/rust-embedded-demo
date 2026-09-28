@@ -3,12 +3,7 @@
 
 use embassy_executor::Spawner;
 use embassy_futures::select::{Either, select};
-use embassy_stm32::Config;
-use embassy_stm32::gpio::{Level, Output, Speed};
-use embassy_stm32::i2c::I2c;
-use embassy_stm32::rcc::{
-    APBPrescaler, Hse, HseMode, Pll, PllMul, PllPDiv, PllPreDiv, PllSource, Sysclk,
-};
+use embassy_stm32::gpio::Output;
 use embassy_stm32::{bind_interrupts, dma, i2c, peripherals};
 use embassy_time::{Duration, Ticker, Timer};
 
@@ -17,13 +12,11 @@ use defmt_rtt as _; // global defmt logger (RTT transport)
 use panic_probe as _; // panic handler (breakpoint; probe-rs reports the halt)
 
 use red_core::Engine;
-
-mod channels;
-mod platform;
-
-use channels::{
+use red_fw::board::Board;
+use red_fw::channels::{
     Request, RequestChannel, RequestReceiver, Response, ResponseChannel, Router, Source,
 };
+use red_fw::platform;
 
 bind_interrupts!(struct Irqs {
     I2C1_EV => i2c::EventInterruptHandler<peripherals::I2C1>;
@@ -75,33 +68,17 @@ async fn blink(mut led_g: Output<'static>, mut led_b: Output<'static>, mut led_r
 /// Main task, setup peripherals and spawn tasks.
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let p = embassy_stm32::init(clock_config());
+    let board = Board::init(Irqs);
 
     info!("red-fw starting, SYSCLK 180 MHz (8 MHz HSE bypass -> PLL)");
 
-    // Setup and spawn the LED task
-    let led_g = Output::new(p.PB0, Level::Low, Speed::Low);
-    let led_b = Output::new(p.PB7, Level::Low, Speed::Low);
-    let led_r = Output::new(p.PB14, Level::Low, Speed::Low);
-    spawner.spawn(unwrap!(blink(led_g, led_b, led_r)));
-
-    // I2C1 on the Arduino header: D15/PB8 = SCL, D14/PB9 = SDA, both AF4.
-    // The default config is 100 kHz with the internal pullups off, so the sensor breakout
-    // is expected to provide them.
-    let i2c = I2c::new(
-        p.I2C1,
-        p.PB8,
-        p.PB9,
-        p.DMA1_CH6,
-        p.DMA1_CH0,
-        Irqs,
-        Default::default(),
-    );
+    // Spawn the LED task
+    spawner.spawn(unwrap!(blink(board.led_g, board.led_b, board.led_r)));
 
     // TODO: other setups here
 
     // Create the platform and engine instances
-    let platform = match platform::Stm32Platform::new(i2c).await {
+    let platform = match platform::Stm32Platform::new(board.i2c).await {
         Ok(p) => p,
         Err(e) => {
             error!("failed to initialize platform: {:?}", e);
@@ -153,25 +130,4 @@ async fn run_engine(
             }
         }
     }
-}
-
-/// 8 MHz HSE (ST-Link MCO, bypass) -> PLL -> 180 MHz SYSCLK.
-fn clock_config() -> Config {
-    let mut config = Config::default();
-    config.rcc.hse = Some(Hse {
-        freq: embassy_stm32::time::Hertz(8_000_000),
-        mode: HseMode::Bypass,
-    });
-    config.rcc.pll_src = PllSource::HSE;
-    config.rcc.pll = Some(Pll {
-        prediv: PllPreDiv::DIV4,
-        mul: PllMul::MUL180,
-        divp: Some(PllPDiv::DIV2), // 8 / 4 * 180 / 2 = 180 MHz
-        divq: None,
-        divr: None,
-    });
-    config.rcc.sys = Sysclk::PLL1_P;
-    config.rcc.apb1_pre = APBPrescaler::DIV4; // 45 MHz, within the 45 MHz max
-    config.rcc.apb2_pre = APBPrescaler::DIV2; // 90 MHz, within the 90 MHz max
-    config
 }

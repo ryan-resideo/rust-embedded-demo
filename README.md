@@ -25,6 +25,39 @@ This is intended to follow the progression of the talk. To see this step-by-step
 - The `thumbv7em-none-eabihf` target, via `rustup target add thumbv7em-none-eabihf`
 - `probe-rs` via `cargo install probe-rs-tools` (or `binstall` if you have it)
 
+## Testing
+
+`core`, `proto` and `lib` are host-testable with `cargo test --workspace`. The firmware is
+not: it tests on the device itself, with [`defmt-test`](https://crates.io/crates/defmt-test).
+
+```bash
+make fw-test
+```
+
+That builds `fw/tests/hardware.rs`, flashes it over the probe and runs it in place. Each
+`#[test]` reports over RTT and the suite exits through semihosting, so `probe-rs` turns the
+result back into an exit code and `cargo test` passes or fails as usual:
+
+```
+(1/3) running `bme280_chip_id`...
+(2/3) running `stm32_uid`...
+(3/3) running `platform_measures`...
+all tests passed!
+```
+
+These are real hardware tests -- a NUCLEO-F429ZI with a BME280 on I2C1 has to be attached,
+and they fail without one. CI has no probe, so it only builds them (`make fw-test-build`).
+
+Two structural notes, both visible in `fw/Cargo.toml`:
+
+- `fw` has a library target (`src/lib.rs`) because Cargo's `tests/` directory can only link
+  a library. `src/main.rs` is a thin shell over it, and `board.rs` holds the bring-up both
+  the application and the tests share, so they run against the same clock tree and pins.
+- Interrupts are bound with `bind_interrupts!` in each binary rather than in the library.
+  The macro defines `#[no_mangle]` handlers that the vector table resolves against weak
+  defaults, and a definition the linker has no reason to pull out of an rlib loses to that
+  default -- silently, with async peripherals that then never complete.
+
 ## Logging
 
 The firmware logs over RTT with [`defmt`](https://defmt.ferrous-systems.com/). `probe-rs`

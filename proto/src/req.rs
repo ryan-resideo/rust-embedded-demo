@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// A request to the RED device, tagged with an identifier the matching
 /// [`Resp`](crate::resp::Resp) echoes back so a source may have several in flight.

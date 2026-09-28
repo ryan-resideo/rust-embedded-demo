@@ -45,7 +45,7 @@ jobs:
       run: cargo clippy --workspace --all-targets --locked -- -D warnings
     - name: Clippy (fw)
       working-directory: fw
-      run: cargo clippy --locked -- -D warnings
+      run: cargo clippy --all-targets --locked -- -D warnings
 
   test:
     name: Test
@@ -115,6 +115,11 @@ jobs:
     - name: Build firmware
       working-directory: fw
       run: cargo build --release --locked
+
+    # The on-device tests need a probe, so CI only checks that they still build.
+    - name: Build on-device tests
+      working-directory: fw
+      run: cargo test --no-run --locked
 
     - name: Upload firmware ELF
       uses: actions/upload-artifact@v7

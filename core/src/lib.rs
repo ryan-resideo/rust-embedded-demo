@@ -24,7 +24,6 @@ pub trait Platform {
     async fn measure(&mut self) -> Result<Measurement, PlatformError>;
 }
 
-
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PlatformError {
