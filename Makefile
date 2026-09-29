@@ -20,8 +20,13 @@ fw-test-build:
 cli-build:
 	cd cli && cargo build
 
+# Pass CLI arguments through ARGS, e.g. `make cli-run ARGS="--transport usb get-device-info"`
 cli-run:
-	cd cli && cargo run
+	cd cli && cargo run -- $(ARGS)
+
+# Host-side tests against a device attached over USB. Set RED_SERIAL to pick one.
+hw-test:
+	cargo test -p red-lib --test usb -- --ignored
 
 check:
 	cargo check

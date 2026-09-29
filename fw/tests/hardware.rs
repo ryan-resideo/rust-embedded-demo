@@ -12,7 +12,7 @@ use panic_probe as _; // panic handler; defmt-test reports failures through it
 
 use embassy_stm32::i2c::{I2c, Master};
 use embassy_stm32::mode::Async;
-use embassy_stm32::{bind_interrupts, dma, i2c, peripherals};
+use embassy_stm32::{bind_interrupts, dma, i2c, peripherals, usb};
 
 use red_fw::board::Board;
 
@@ -21,6 +21,7 @@ bind_interrupts!(struct Irqs {
     I2C1_ER => i2c::ErrorInterruptHandler<peripherals::I2C1>;
     DMA1_STREAM0 => dma::InterruptHandler<peripherals::DMA1_CH0>;
     DMA1_STREAM6 => dma::InterruptHandler<peripherals::DMA1_CH6>;
+    OTG_FS => usb::InterruptHandler<peripherals::USB_OTG_FS>;
 });
 
 /// Hardware brought up once, shared by every test in the suite.

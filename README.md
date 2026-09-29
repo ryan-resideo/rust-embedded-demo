@@ -11,7 +11,7 @@ This is intended to follow the progression of the talk. To see this step-by-step
 
 ## Layout
 
-- [fw](fw/) contains the STM32 devices firmware
+- [fw](fw/) contains the STM32 devices firmware, which serves requests over USB
 - [core](core/) contains application/business logic
 - [proto](proto/) defines the protocol for communication between components
 - [lib](lib/) supports interacting with the device from different OS'
@@ -57,6 +57,36 @@ Two structural notes, both visible in `fw/Cargo.toml`:
   The macro defines `#[no_mangle]` handlers that the vector table resolves against weak
   defaults, and a definition the linker has no reason to pull out of an rlib loses to that
   default -- silently, with async peripherals that then never complete.
+
+## Talking to the device
+
+The firmware exposes a vendor-specific USB interface on the NUCLEO's **user USB** connector
+(CN13, at the bottom of the board), not the ST-Link one. With both plugged in:
+
+```bash
+cargo run -p red-cli -- --transport usb list-devices
+cargo run -p red-cli -- --transport usb get-device-info
+cargo run -p red-cli -- --transport usb get-measurement
+```
+
+The USB serial number is the chip's unique id, so with several boards attached pick one with
+`--host <serial>`. A measurement is taken every 10 seconds; until the first one,
+`get-measurement` reports `MeasurementFailed`.
+
+Requests and responses are the `red-proto` types, postcard-encoded and COBS-framed, so a
+message may span several 64 byte USB packets. On the host, `red-lib` uses
+[`nusb`](https://crates.io/crates/nusb), which needs no driver on any platform:
+
+- macOS: nothing to do.
+- Windows: the device's MS OS 2.0 descriptors bind WinUSB automatically.
+- Linux: grant access to non-root users with a udev rule, e.g. in
+  `/etc/udev/rules.d/70-red.rules`:
+  `SUBSYSTEM=="usb", ATTR{idVendor}=="c0de", ATTR{idProduct}=="cafe", MODE="0666"`
+
+`make hitl-usb` runs the host-side tests in `lib/tests/usb.rs` against an attached board.
+
+The VID/PID (`0xc0de`/`0xcafe`, in `proto/src/usb.rs`) are the embassy examples' demo pair,
+not an allocated ID.
 
 ## Logging
 

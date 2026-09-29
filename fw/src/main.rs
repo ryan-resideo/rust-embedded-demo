@@ -4,8 +4,10 @@
 use embassy_executor::Spawner;
 use embassy_futures::select::{Either, select};
 use embassy_stm32::gpio::Output;
-use embassy_stm32::{bind_interrupts, dma, i2c, peripherals};
+use embassy_stm32::usb::Driver;
+use embassy_stm32::{bind_interrupts, dma, i2c, peripherals, usb};
 use embassy_time::{Duration, Ticker, Timer};
+use embassy_usb::UsbDevice;
 
 use defmt::{error, info, unwrap, warn};
 use defmt_rtt as _; // global defmt logger (RTT transport)
@@ -14,16 +16,21 @@ use panic_probe as _; // panic handler (breakpoint; probe-rs reports the halt)
 use red_core::Engine;
 use red_fw::board::Board;
 use red_fw::channels::{
-    Request, RequestChannel, RequestReceiver, Response, ResponseChannel, Router, Source,
+    Port, Request, RequestChannel, RequestReceiver, Response, ResponseChannel, Router, Source,
 };
 use red_fw::platform;
+use red_fw::usb::UsbTransport;
 
 bind_interrupts!(struct Irqs {
     I2C1_EV => i2c::EventInterruptHandler<peripherals::I2C1>;
     I2C1_ER => i2c::ErrorInterruptHandler<peripherals::I2C1>;
     DMA1_STREAM0 => dma::InterruptHandler<peripherals::DMA1_CH0>;
     DMA1_STREAM6 => dma::InterruptHandler<peripherals::DMA1_CH6>;
+    OTG_FS => usb::InterruptHandler<peripherals::USB_OTG_FS>;
 });
+
+/// The USB driver for this board.
+type UsbDriver = Driver<'static, peripherals::USB_OTG_FS>;
 
 /// Requests into the engine, shared by every communications source.
 static ENGINE_REQUESTS: RequestChannel = RequestChannel::new();
@@ -70,12 +77,21 @@ async fn blink(mut led_g: Output<'static>, mut led_b: Output<'static>, mut led_r
 async fn main(spawner: Spawner) {
     let board = Board::init(Irqs);
 
-    info!("red-fw starting, SYSCLK 180 MHz (8 MHz HSE bypass -> PLL)");
+    info!("red-fw starting, SYSCLK 168 MHz (8 MHz HSE bypass -> PLL)");
 
     // Spawn the LED task
     spawner.spawn(unwrap!(blink(board.led_g, board.led_b, board.led_r)));
 
-    // TODO: other setups here
+    // Bring USB up before the platform, so the device enumerates even if the sensor does not.
+    // Requests queue on the engine channel until the engine task below is running.
+    let (usb_device, usb_transport) = UsbTransport::new(board.usb, embassy_stm32::uid::uid_hex());
+    let usb_port = Port::new(
+        Source::Usb,
+        ENGINE_REQUESTS.sender(),
+        USB_RESPONSES.receiver(),
+    );
+    spawner.spawn(unwrap!(run_usb_device(usb_device)));
+    spawner.spawn(unwrap!(run_usb_transport(usb_transport, usb_port)));
 
     // Create the platform and engine instances
     let platform = match platform::Stm32Platform::new(board.i2c).await {
@@ -95,8 +111,19 @@ async fn main(spawner: Spawner) {
         engine_router()
     )));
 
-    // TODO: spawn the transports and bind them to the engine channel
     info!("startup complete");
+}
+
+/// USB device task, services enumeration and control requests.
+#[embassy_executor::task]
+async fn run_usb_device(mut device: UsbDevice<'static, UsbDriver>) -> ! {
+    device.run().await
+}
+
+/// USB transport task, carries requests and responses between the host and the engine.
+#[embassy_executor::task]
+async fn run_usb_transport(mut transport: UsbTransport<UsbDriver>, port: Port) -> ! {
+    transport.run(port).await
 }
 
 /// Engine task, services requests from every source and routes responses back to the source
