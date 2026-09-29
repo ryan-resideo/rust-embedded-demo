@@ -5,9 +5,6 @@
 //! [`Router`] containing a response channel for every supported transport, and returns each
 //! [`Response`] to the transport named by that address.
 
-// TODO: drop once the transports exercise the whole port API
-#![allow(dead_code)]
-
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError};
 

@@ -3,9 +3,12 @@
 
 use embassy_executor::Spawner;
 use embassy_futures::select::{Either, select};
+use embassy_net::{Runner, Stack};
 use embassy_stm32::gpio::Output;
+use embassy_stm32::peripherals::RNG;
+use embassy_stm32::rng::Rng;
 use embassy_stm32::usb::Driver;
-use embassy_stm32::{bind_interrupts, dma, i2c, peripherals, usb};
+use embassy_stm32::{bind_interrupts, dma, eth, i2c, peripherals, rng, usb};
 use embassy_time::{Duration, Ticker, Timer};
 use embassy_usb::UsbDevice;
 
@@ -14,12 +17,13 @@ use defmt_rtt as _; // global defmt logger (RTT transport)
 use panic_probe as _; // panic handler (breakpoint; probe-rs reports the halt)
 
 use red_core::Engine;
-use red_fw::board::Board;
+use red_fw::board::{Board, Eth};
 use red_fw::channels::{
     Port, Request, RequestChannel, RequestReceiver, Response, ResponseChannel, Router, Source,
 };
-use red_fw::platform;
+use red_fw::udp::UdpTransport;
 use red_fw::usb::UsbTransport;
+use red_fw::{mdns, net, platform};
 
 bind_interrupts!(struct Irqs {
     I2C1_EV => i2c::EventInterruptHandler<peripherals::I2C1>;
@@ -27,6 +31,8 @@ bind_interrupts!(struct Irqs {
     DMA1_STREAM0 => dma::InterruptHandler<peripherals::DMA1_CH0>;
     DMA1_STREAM6 => dma::InterruptHandler<peripherals::DMA1_CH6>;
     OTG_FS => usb::InterruptHandler<peripherals::USB_OTG_FS>;
+    ETH => eth::InterruptHandler;
+    HASH_RNG => rng::InterruptHandler<peripherals::RNG>;
 });
 
 /// The USB driver for this board.
@@ -75,7 +81,7 @@ async fn blink(mut led_g: Output<'static>, mut led_b: Output<'static>, mut led_r
 /// Main task, setup peripherals and spawn tasks.
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let board = Board::init(Irqs);
+    let mut board = Board::init(Irqs);
 
     info!("red-fw starting, SYSCLK 168 MHz (8 MHz HSE bypass -> PLL)");
 
@@ -92,6 +98,19 @@ async fn main(spawner: Spawner) {
     );
     spawner.spawn(unwrap!(run_usb_device(usb_device)));
     spawner.spawn(unwrap!(run_usb_transport(usb_transport, usb_port)));
+
+    // Likewise the network: DHCP, the UDP command socket and mDNS all come up in the
+    // background, whenever a cable is plugged in.
+    let (stack, runner) = net::init(board.eth, board.rng.next_u64());
+    let udp_transport = UdpTransport::new(stack);
+    let udp_port = Port::new(
+        Source::Udp,
+        ENGINE_REQUESTS.sender(),
+        UDP_RESPONSES.receiver(),
+    );
+    spawner.spawn(unwrap!(run_net(runner)));
+    spawner.spawn(unwrap!(run_udp_transport(udp_transport, udp_port)));
+    spawner.spawn(unwrap!(run_mdns(stack, board.rng)));
 
     // Create the platform and engine instances
     let platform = match platform::Stm32Platform::new(board.i2c).await {
@@ -124,6 +143,25 @@ async fn run_usb_device(mut device: UsbDevice<'static, UsbDriver>) -> ! {
 #[embassy_executor::task]
 async fn run_usb_transport(mut transport: UsbTransport<UsbDriver>, port: Port) -> ! {
     transport.run(port).await
+}
+
+/// Network task, drives the IP stack: DHCP, ARP, and every socket's traffic.
+#[embassy_executor::task]
+async fn run_net(mut runner: Runner<'static, Eth>) -> ! {
+    runner.run().await
+}
+
+/// UDP transport task, carries requests and responses between hosts and the engine.
+#[embassy_executor::task]
+async fn run_udp_transport(mut transport: UdpTransport, port: Port) -> ! {
+    transport.run(port).await
+}
+
+/// mDNS task, advertises the device on the LAN whenever it has an address.
+#[embassy_executor::task]
+async fn run_mdns(stack: Stack<'static>, rng: Rng<'static, RNG>) -> ! {
+    let hostname = net::hostname();
+    mdns::run(stack, rng, &hostname, embassy_stm32::uid::uid_hex()).await
 }
 
 /// Engine task, services requests from every source and routes responses back to the source

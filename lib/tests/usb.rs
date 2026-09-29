@@ -1,7 +1,7 @@
 //! Hardware-in-the-loop tests against a RED device attached over USB.
 //!
 //! Ignored by default, as they need a board running the firmware with CN13 (user USB)
-//! connected. Run them with `make hitl-usb`, or `cargo test -p red-lib -- --ignored`.
+//! connected. Run them with `make hitl-usb`, or `cargo test -p red-lib --test usb -- --ignored`.
 //! Set `RED_SERIAL` to pick a device when several are attached.
 
 use red_lib::{Client, usb};
@@ -62,4 +62,3 @@ async fn usb_measurement() {
     assert!(measurement.pressure > 30_000.0 && measurement.pressure < 110_000.0);
     assert!(measurement.humidity >= 0.0 && measurement.humidity <= 100.0);
 }
-

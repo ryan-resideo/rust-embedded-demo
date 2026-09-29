@@ -1,7 +1,7 @@
 //! On-device tests, run against an attached probe with `cargo test`.
 //!
 //! These exercise real hardware: a NUCLEO-F429ZI with a BME280 on I2C1 must be connected,
-//! so they fail on a bare board by design. defmt-test provides the entry point and exits via
+//! so they fail on a bare board by design. The Ethernet test needs no cable. defmt-test provides the entry point and exits via
 //! semihosting, which probe-rs turns back into a process exit code.
 
 #![no_std]
@@ -12,9 +12,9 @@ use panic_probe as _; // panic handler; defmt-test reports failures through it
 
 use embassy_stm32::i2c::{I2c, Master};
 use embassy_stm32::mode::Async;
-use embassy_stm32::{bind_interrupts, dma, i2c, peripherals, usb};
+use embassy_stm32::{bind_interrupts, dma, eth, i2c, peripherals, rng, usb};
 
-use red_fw::board::Board;
+use red_fw::board::{Board, Eth};
 
 bind_interrupts!(struct Irqs {
     I2C1_EV => i2c::EventInterruptHandler<peripherals::I2C1>;
@@ -22,21 +22,27 @@ bind_interrupts!(struct Irqs {
     DMA1_STREAM0 => dma::InterruptHandler<peripherals::DMA1_CH0>;
     DMA1_STREAM6 => dma::InterruptHandler<peripherals::DMA1_CH6>;
     OTG_FS => usb::InterruptHandler<peripherals::USB_OTG_FS>;
+    ETH => eth::InterruptHandler;
+    HASH_RNG => rng::InterruptHandler<peripherals::RNG>;
 });
 
 /// Hardware brought up once, shared by every test in the suite.
 struct State {
     /// Taken by the first test that needs to own the bus.
     i2c: Option<I2c<'static, Async, Master>>,
+    /// The Ethernet MAC, for access to the PHY behind it
+    eth: Eth,
 }
 
 #[defmt_test::tests]
 mod tests {
     use bme280_rs::{AsyncBme280, CHIP_ID};
     use embassy_futures::block_on;
+    use embassy_stm32::eth::StationManagement;
     use embassy_time::Delay;
 
     use red_core::Platform;
+    use red_fw::board::PHY_ADDRESS;
     use red_fw::platform::{BME280_ADDRESS, Stm32Platform};
 
     use super::{Board, Irqs, State};
@@ -47,6 +53,7 @@ mod tests {
 
         State {
             i2c: Some(board.i2c),
+            eth: board.eth,
         }
     }
 
@@ -76,6 +83,23 @@ mod tests {
 
         defmt::assert_eq!(uid.len(), 24);
         defmt::assert!(uid.bytes().any(|b| b != b'0'));
+    }
+
+    /// Reads the LAN8742A's identifier over SMI.
+    ///
+    /// Exercises the RMII management pins and the PHY's strapped address without needing a
+    /// cable or a link partner.
+    #[test]
+    fn eth_phy_id(state: &mut State) {
+        /// PHY identifier 1: the top of the OUI, 0x0007 for every SMSC/Microchip PHY
+        const PHY_ID1: u8 = 0x02;
+        /// PHY identifier 2: the rest of the OUI, model 0x0f and a revision nibble
+        const PHY_ID2: u8 = 0x03;
+
+        let sm = state.eth.phy_mut().station_management();
+
+        defmt::assert_eq!(sm.smi_read(PHY_ADDRESS, PHY_ID1), 0x0007);
+        defmt::assert_eq!(sm.smi_read(PHY_ADDRESS, PHY_ID2) & 0xfff0, 0xc130);
     }
 
     /// The platform initialises and returns a plausible measurement.

@@ -63,6 +63,11 @@ bme280-rs = { version = "0.4.1", default-features = false, features = ["async"] 
 
 red-core = { path = "../core", features = ["defmt"] }
 red-proto = { path = "../proto", features = ["defmt"] }
+embassy-net = { version = "0.9.1", features = ["defmt", "medium-ethernet", "proto-ipv4", "udp", "dhcpv4", "dhcpv4-hostname", "multicast"] }
+edge-mdns = { version = "0.8", default-features = false, features = ["io", "defmt"] }
+edge-nal-embassy = { version = "0.9", default-features = false, features = ["proto-ipv4", "medium-ethernet", "udp", "multicast", "defmt"] }
+edge-nal = "0.7.0"
+rand_core = { version = "0.10", default-features = false }
 
 [dev-dependencies]
 defmt-test = "0.5.0"

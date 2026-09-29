@@ -7,7 +7,8 @@ use red_proto::{
     resp::{DeviceInfo, Error, Measurement, Resp, RespBody},
 };
 
-const GIT_VERSION: &str = env!("GIT_VERSION");
+/// The firmware version reported in [`DeviceInfo`], from `git describe` at build time.
+pub const GIT_VERSION: &str = env!("GIT_VERSION");
 
 /// An abstract interface for the underlying hardware platform
 ///

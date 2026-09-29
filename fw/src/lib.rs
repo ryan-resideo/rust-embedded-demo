@@ -10,5 +10,8 @@ use panic_probe as _; // panic handler (breakpoint; probe-rs reports the halt)
 
 pub mod board;
 pub mod channels;
+pub mod mdns;
+pub mod net;
 pub mod platform;
+pub mod udp;
 pub mod usb;

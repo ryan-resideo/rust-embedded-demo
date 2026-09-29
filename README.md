@@ -11,7 +11,7 @@ This is intended to follow the progression of the talk. To see this step-by-step
 
 ## Layout
 
-- [fw](fw/) contains the STM32 devices firmware, which serves requests over USB
+- [fw](fw/) contains the STM32 devices firmware, which serves requests over USB and Ethernet (UDP)
 - [core](core/) contains application/business logic
 - [proto](proto/) defines the protocol for communication between components
 - [lib](lib/) supports interacting with the device from different OS'
@@ -39,9 +39,10 @@ That builds `fw/tests/hardware.rs`, flashes it over the probe and runs it in pla
 result back into an exit code and `cargo test` passes or fails as usual:
 
 ```
-(1/3) running `bme280_chip_id`...
-(2/3) running `stm32_uid`...
-(3/3) running `platform_measures`...
+(1/4) running `bme280_chip_id`...
+(2/4) running `stm32_uid`...
+(3/4) running `eth_phy_id`...
+(4/4) running `platform_measures`...
 all tests passed!
 ```
 
@@ -87,6 +88,34 @@ message may span several 64 byte USB packets. On the host, `red-lib` uses
 
 The VID/PID (`0xc0de`/`0xcafe`, in `proto/src/usb.rs`) are the embassy examples' demo pair,
 not an allocated ID.
+
+### Over Ethernet
+
+Plug the NUCLEO's RJ45 connector (CN14) into a network with a DHCP server. The board takes an
+address, serves requests on UDP port 7477, and advertises itself over mDNS as
+`red-<chip id>.local`, with a `_red._udp` DNS-SD service. The host finds it from there:
+
+```bash
+cargo run -p red-cli -- --transport udp list-devices
+cargo run -p red-cli -- --transport udp get-device-info
+cargo run -p red-cli -- --transport udp get-measurement
+```
+
+With several boards on the network, pick one with `--host <chip id>`. Discovery needs
+multicast between the host and the board, which guest Wi-Fi and many managed networks block;
+`--host` also takes an address (`--host 192.168.1.20`, or `IP:port`), which skips mDNS
+entirely. The board logs its address over RTT once DHCP completes, and
+`dns-sd -B _red._udp` (macOS) or `avahi-browse -r _red._udp` (Linux) shows what is being
+advertised.
+
+Each datagram carries exactly one COBS-framed `red-proto` message, the same encoding as USB.
+UDP can lose datagrams, so a lost request or response shows up as a timeout; just retry.
+
+The MAC address is locally administered, derived from the chip's unique id, so each board
+keeps the same address (and DHCP lease) across reboots.
+
+`make hitl-udp` runs the host-side tests in `lib/tests/udp.rs` against a board on the
+network. Set `RED_HOST` to a chip id or an address to pick one.
 
 ## Logging
 

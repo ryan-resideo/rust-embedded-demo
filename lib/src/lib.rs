@@ -8,6 +8,7 @@ use clap::ValueEnum;
 mod client;
 mod error;
 mod link;
+pub mod udp;
 pub mod usb;
 
 pub use client::Client;

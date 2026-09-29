@@ -5,7 +5,7 @@ target = "thumbv7em-none-eabihf"
 # defmt filters at compile time and defaults to ERROR-only when unset.
 # force = false, so `DEFMT_LOG=trace cargo run` from the shell still wins.
 # `DEFMT_LOG=off` drops every log call and its interned string from the binary.
-DEFMT_LOG = { value = "debug", force = false }
+DEFMT_LOG = { value = "debug,edge_mdns=info,embassy_net=info,smoltcp=info", force = false }
 
 [target.thumbv7em-none-eabihf]
 # `cargo run` builds, flashes, resets and stays attached.

@@ -5,6 +5,8 @@ pub mod req;
 
 pub mod resp;
 
+pub mod udp;
+
 pub mod usb;
 
 /// Largest encoded [`Req`](req::Req) or [`Resp`](resp::Resp), COBS delimiter included.

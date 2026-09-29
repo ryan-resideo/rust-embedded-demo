@@ -25,8 +25,12 @@ cli-run:
 	cd cli && cargo run -- $(ARGS)
 
 # Host-side tests against a device attached over USB. Set RED_SERIAL to pick one.
-hw-test:
+hitl-usb:
 	cargo test -p red-lib --test usb -- --ignored
+
+# Host-side tests against a device on the network. Set RED_HOST (chip id or IP) to pick one.
+hitl-udp:
+	cargo test -p red-lib --test udp -- --ignored
 
 check:
 	cargo check
